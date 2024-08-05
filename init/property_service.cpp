@@ -798,98 +798,6 @@ static void load_override_properties() {
     }
 }
 
-static const char *snet_prop_key[] = {
-    "ro.boot.vbmeta.device_state",
-    "ro.boot.verifiedbootstate",
-    "ro.boot.flash.locked",
-    "ro.boot.selinux",
-    "ro.boot.veritymode",
-    "ro.boot.warranty_bit",
-    "ro.warranty_bit",
-    "ro.debuggable",
-    "ro.secure",
-    "ro.bootimage.build.type",
-    "ro.build.type",
-    "ro.system.build.type",
-    "ro.system_ext.build.type",
-    "ro.vendor.build.type",
-    "ro.vendor_dlkm.build.type",
-    "ro.product.build.type",
-    "ro.odm.build.type",
-    "ro.build.keys",
-    "ro.build.tags",
-    "ro.system.build.tags",
-    "ro.vendor.boot.warranty_bit",
-    "ro.vendor.warranty_bit",
-    "vendor.boot.vbmeta.device_state",
-    "vendor.boot.verifiedbootstate",
-    NULL
-};
-
-static const char *snet_prop_value[] = {
-    "locked", // ro.boot.vbmeta.device_state
-    "green", // ro.boot.verifiedbootstate
-    "1", // ro.boot.flash.locked
-    "enforcing", // ro.boot.selinux
-    "enforcing", // ro.boot.veritymode
-    "0", // ro.boot.warranty_bit
-    "0", // ro.warranty_bit
-    "0", // ro.debuggable
-    "1", // ro.secure
-    "user", // ro.bootimage.build.type
-    "user", // ro.build.type
-    "user", // ro.system.build.type
-    "user", // ro.system_ext.build.type
-    "user", // ro.vendor.build.type
-    "user", // ro.vendor_dlkm.build.type
-    "user", // ro.product.build.type
-    "user", // ro.odm.build.type
-    "release-keys", // ro.build.keys
-    "release-keys", // ro.build.tags
-    "release-keys", // ro.system.build.tags
-    "0", // ro.vendor.boot.warranty_bit
-    "0", // ro.vendor.warranty_bit
-    "locked", // vendor.boot.vbmeta.device_state
-    "green", // vendor.boot.verifiedbootstate
-    NULL
-};
-
-static void workaround_snet_properties() {
-    std::string build_type = android::base::GetProperty("ro.build.type", "");
-
-    // Bail out if this is recovery, fastbootd, or anything other than a normal boot.
-    // fastbootd, in particular, needs the real values so it can allow flashing on
-    // unlocked bootloaders.
-    if (IsRecoveryMode()) {
-        return;
-    }
-
-    // Exit if eng build
-    if (build_type == "eng") {
-        return;
-    }
-
-    // Weaken property override security to set safetynet props
-    weaken_prop_override_security = true;
-
-    std::string error;
-
-    // Hide all sensitive props 
-    LOG(INFO) << "snet: Hiding sensitive props";
-    for (int i = 0; snet_prop_key[i]; ++i) {
-        PropertySet(snet_prop_key[i], snet_prop_value[i], &error);
-    }
-
-    // Extra pops
-    std::string build_flavor_key = "ro.build.flavor";
-    std::string build_flavor_value = android::base::GetProperty(build_flavor_key, "");
-    build_flavor_value = android::base::StringReplace(build_flavor_value, "userdebug", "user", false);
-    PropertySet(build_flavor_key, build_flavor_value, &error);
-
-    // Restore the normal property override security after safetynet props have been set
-    weaken_prop_override_security = false;
-}
-
 // If the ro.product.[brand|device|manufacturer|model|name] properties have not been explicitly
 // set, derive them from ro.product.${partition}.* properties
 static void property_initialize_ro_product_props() {
@@ -1227,6 +1135,9 @@ void PropertyLoadBootDefaults() {
         }
     }
 
+    // Weaken property override security during execution of the vendor init extension
+    weaken_prop_override_security = true;
+
     // Update with vendor-specific property runtime overrides
     vendor_load_properties();
 
@@ -1239,8 +1150,8 @@ void PropertyLoadBootDefaults() {
 
     update_sys_usb_config();
 
-    // Workaround SafetyNet
-    workaround_snet_properties();
+    // Restore the normal property override security after init extension is executed
+    weaken_prop_override_security = false;
 }
 
 bool LoadPropertyInfoFromFile(const std::string& filename,
